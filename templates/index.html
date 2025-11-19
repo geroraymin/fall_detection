@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>쓰러짐 감지 시스템</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+        }
+
+        #video-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #000;
+        }
+
+        #video {
+            display: none;
+        }
+
+        #canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        #processed-video {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+        }
+
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            z-index: 100;
+        }
+
+        #status.connected {
+            color: #4CAF50;
+        }
+
+        #status.disconnected {
+            color: #f44336;
+        }
+
+        #status.warning {
+            color: #ff9800;
+        }
+
+        #camera-permission-btn {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        #camera-permission-btn:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+        }
+
+        #camera-permission-btn:active {
+            transform: translate(-50%, -50%) scale(0.98);
+        }
+
+        #camera-permission-btn.hidden {
+            display: none;
+        }
+
+        .warning-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 0, 0, 0.9);
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            display: none;
+            z-index: 100;
+            animation: pulse 1s infinite;
+        }
+
+        .warning-indicator.active {
+            display: block;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.6;
+            }
+        }
+
+        .info-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 100;
+            max-width: 300px;
+        }
+
+        .info-panel h3 {
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .info-panel p {
+            margin: 5px 0;
+            line-height: 1.5;
+        }
+
+        audio {
+            display: none;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 20px;
+            text-align: center;
+        }
+
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="video-container">
+            <div id="status" class="disconnected">연결 중...</div>
+            
+            <button id="camera-permission-btn">카메라 시작하기</button>
+            
+            <div class="loading" id="loading" style="display: none;">
+                <div class="spinner"></div>
+                <p>처리 중...</p>
+            </div>
+
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas" style="display: none;"></canvas>
+            <img id="processed-video" alt="Processed Video Stream">
+
+            <div class="warning-indicator" id="warning-indicator">
+                ⚠️ 쓰러짐 감지! ⚠️
+            </div>
+
+            <div class="info-panel">
+                <h3>시스템 정보</h3>
+                <p>📹 상태: <span id="camera-status">대기 중</span></p>
+                <p>🔍 감지: <span id="detection-status">정상</span></p>
+                <p>⏱️ FPS: <span id="fps">0</span></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 경고음 -->
+    <audio id="warning-audio" loop>
+        <source src="/static/siren.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const processedVideo = document.getElementById('processed-video');
+        const status = document.getElementById('status');
+        const warningIndicator = document.getElementById('warning-indicator');
+        const warningAudio = document.getElementById('warning-audio');
+        const cameraBtn = document.getElementById('camera-permission-btn');
+        const loading = document.getElementById('loading');
+        const cameraStatus = document.getElementById('camera-status');
+        const detectionStatus = document.getElementById('detection-status');
+        const fpsDisplay = document.getElementById('fps');
+
+        let socket = null;
+        let isStreaming = false;
+        let frameCount = 0;
+        let lastFpsTime = Date.now();
+        let currentFps = 0;
+        let warningBlinkInterval = null;
+        let isWarningActive = false;
+        let isCameraReady = false;
+
+        // Socket.IO 연결
+        function connectSocket() {
+            socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+
+            socket.on('connect', function() {
+                console.log('서버 연결됨');
+                status.textContent = '서버 연결됨';
+                status.className = 'connected';
+            });
+
+            socket.on('disconnect', function() {
+                console.log('서버 연결 해제됨');
+                status.textContent = '서버 연결 해제됨';
+                status.className = 'disconnected';
+            });
+
+            socket.on('processed_frame', function(data) {
+                // 처리된 프레임 표시
+                processedVideo.src = data.frame;
+                
+                // 쓰러짐 감지 상태 업데이트
+                if (data.is_fall) {
+                    if (!isWarningActive) {
+                        activateWarning();
+                    }
+                    detectionStatus.textContent = '⚠️ 쓰러짐 감지!';
+                    detectionStatus.style.color = '#ff4444';
+                } else {
+                    if (isWarningActive) {
+                        deactivateWarning();
+                    }
+                    detectionStatus.textContent = '정상';
+                    detectionStatus.style.color = '#4CAF50';
+                }
+
+                // FPS 계산
+                frameCount++;
+                const now = Date.now();
+                if (now - lastFpsTime >= 1000) {
+                    currentFps = frameCount;
+                    fpsDisplay.textContent = currentFps;
+                    frameCount = 0;
+                    lastFpsTime = now;
+                }
+            });
+        }
+
+        // 카메라 시작
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    },
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = function() {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    isCameraReady = true;
+                    cameraBtn.classList.add('hidden');
+                    loading.style.display = 'none';
+                    cameraStatus.textContent = '활성';
+                    cameraStatus.style.color = '#4CAF50';
+                    
+                    // 프레임 전송 시작
+                    isStreaming = true;
+                    sendFrames();
+                };
+
+            } catch (err) {
+                console.error('카메라 접근 오류:', err);
+                alert('카메라 접근 권한이 필요합니다.\n브라우저 설정에서 카메라 권한을 허용해주세요.');
+                cameraBtn.classList.remove('hidden');
+                loading.style.display = 'none';
+                status.textContent = '카메라 권한 거부됨';
+                status.className = 'warning';
+            }
+        }
+
+        // 프레임 전송
+        function sendFrames() {
+            if (!isStreaming || !isCameraReady || !socket) return;
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            socket.emit('video_frame', { frame: frameData });
+
+            // 다음 프레임 요청 (약 30fps)
+            setTimeout(sendFrames, 33);
+        }
+
+        // 경고 활성화
+        function activateWarning() {
+            isWarningActive = true;
+            warningIndicator.classList.add('active');
+            
+            // 경고음 재생
+            warningAudio.play().catch(err => {
+                console.log('오디오 재생 오류:', err);
+            });
+
+            // WARNING 텍스트 깜빡임 (500ms 간격)
+            let blinkState = false;
+            warningBlinkInterval = setInterval(() => {
+                blinkState = !blinkState;
+                socket.emit('toggle_warning', { show: blinkState });
+            }, 500);
+        }
+
+        // 경고 비활성화
+        function deactivateWarning() {
+            isWarningActive = false;
+            warningIndicator.classList.remove('active');
+            
+            // 경고음 정지
+            warningAudio.pause();
+            warningAudio.currentTime = 0;
+
+            // 깜빡임 중지
+            if (warningBlinkInterval) {
+                clearInterval(warningBlinkInterval);
+                warningBlinkInterval = null;
+            }
+            
+            socket.emit('toggle_warning', { show: false });
+        }
+
+        // 카메라 버튼 클릭 이벤트
+        cameraBtn.addEventListener('click', function() {
+            cameraBtn.classList.add('hidden');
+            loading.style.display = 'block';
+            startCamera();
+        });
+
+        // 페이지 로드 시 소켓 연결
+        window.addEventListener('load', function() {
+            connectSocket();
+        });
+
+        // 페이지 언로드 시 정리
+        window.addEventListener('beforeunload', function() {
+            isStreaming = false;
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+            if (socket) {
+                socket.disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
