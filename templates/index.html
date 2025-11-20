@@ -300,8 +300,8 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
-                        width: { ideal: 640 },
-                        height: { ideal: 480 },
+                        width: { ideal: 480 },
+                        height: { ideal: 360 },
                         facingMode: 'user'
                     },
                     audio: false 
@@ -338,30 +338,30 @@
         function sendFrames() {
             if (!isStreaming || !isCameraReady || !socket || isProcessing) {
                 if (isStreaming && isCameraReady) {
-                    setTimeout(sendFrames, 100);
+                    setTimeout(sendFrames, 200);
                 }
                 return;
             }
 
             isProcessing = true;
             
-            // 캔버스 크기 최적화 (640px 최대)
-            let targetWidth = Math.min(video.videoWidth, 640);
-            let targetHeight = Math.min(video.videoHeight, 480);
+            // 캔버스 크기 최적화 (480px 최대 - 더 작게)
+            let targetWidth = Math.min(video.videoWidth, 480);
+            let targetHeight = Math.min(video.videoHeight, 360);
             
             canvas.width = targetWidth;
             canvas.height = targetHeight;
             
             ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-            const frameData = canvas.toDataURL('image/jpeg', 0.7);
+            const frameData = canvas.toDataURL('image/jpeg', 0.6);
             
             socket.emit('video_frame', { frame: frameData });
 
-            // 다음 프레임 요청 (약 10fps - 메모리 최적화)
+            // 다음 프레임 요청 (약 5fps - 메모리 최적화)
             setTimeout(() => {
                 isProcessing = false;
                 sendFrames();
-            }, 100);
+            }, 200);
         }
 
         // 경고 활성화

@@ -77,12 +77,15 @@ def process_frame(frame_data):
         if frame is None or model is None:
             return None, False
         
-        # 프레임 크기 조정 (메모리 최적화)
-        max_width = 640
+        # 프레임 크기 조정 (메모리 최적화) - 더 작게
+        max_width = 480
         h, w = frame.shape[:2]
         if w > max_width:
             scale = max_width / w
             frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        
+        # 메모리 정리
+        del img_data, nparr
         
         # YOLO 입력 준비
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -93,10 +96,11 @@ def process_frame(frame_data):
         img /= 255.0
         img = img.unsqueeze(0)
         
-        # YOLO 추론
-        results = model(img)
-        results = non_max_suppression(results, conf_thres=0.25, iou_thres=0.45)
-        preds = results[0]
+        # YOLO 추론 (no_grad로 메모리 절약)
+        with torch.no_grad():
+            results = model(img)
+            results = non_max_suppression(results, conf_thres=0.25, iou_thres=0.45)
+            preds = results[0]
         
         # 쓰러짐 감지 확인
         is_fall_detected_in_frame = False
@@ -226,13 +230,14 @@ def process_frame(frame_data):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                             text_color, 2)
         
-        # 프레임을 JPEG로 인코딩 (품질 낮춤 - 메모리 최적화)
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+        # 프레임을 JPEG로 인코딩 (품질 더 낮춤 - 메모리 최적화)
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 60]
         _, buffer = cv2.imencode('.jpg', frame, encode_param)
         frame_bytes = buffer.tobytes()
         
-        # 메모리 정리
-        del img, buffer
+        # 적극적인 메모리 정리
+        del img, buffer, frame, overlay
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
         return frame_bytes, fall_detection_state['is_fall_persistent']
         
@@ -240,6 +245,9 @@ def process_frame(frame_data):
         print(f"프레임 처리 오류: {e}")
         import traceback
         traceback.print_exc()
+        # 에러 발생 시에도 메모리 정리
+        import gc
+        gc.collect()
         return None, False
 
 @app.route('/')
@@ -269,12 +277,17 @@ def handle_video_frame(data):
                 'frame': f'data:image/jpeg;base64,{frame_base64}',
                 'is_fall': is_fall
             })
-            # 메모리 정리
+            # 적극적인 메모리 정리
             del frame_bytes, frame_base64
+            import gc
+            gc.collect()
     except Exception as e:
         print(f"비디오 프레임 처리 오류: {e}")
         import traceback
         traceback.print_exc()
+        # 에러 발생 시에도 메모리 정리
+        import gc
+        gc.collect()
 
 @socketio.on('toggle_warning')
 def handle_toggle_warning(data):
