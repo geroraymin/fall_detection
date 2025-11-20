@@ -300,8 +300,8 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { 
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
                         facingMode: 'user'
                     },
                     audio: false 
@@ -334,16 +334,34 @@
         }
 
         // 프레임 전송
+        let isProcessing = false;
         function sendFrames() {
-            if (!isStreaming || !isCameraReady || !socket) return;
+            if (!isStreaming || !isCameraReady || !socket || isProcessing) {
+                if (isStreaming && isCameraReady) {
+                    setTimeout(sendFrames, 100);
+                }
+                return;
+            }
 
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            const frameData = canvas.toDataURL('image/jpeg', 0.8);
+            isProcessing = true;
+            
+            // 캔버스 크기 최적화 (640px 최대)
+            let targetWidth = Math.min(video.videoWidth, 640);
+            let targetHeight = Math.min(video.videoHeight, 480);
+            
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+            
+            ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+            const frameData = canvas.toDataURL('image/jpeg', 0.7);
             
             socket.emit('video_frame', { frame: frameData });
 
-            // 다음 프레임 요청 (약 30fps)
-            setTimeout(sendFrames, 33);
+            // 다음 프레임 요청 (약 10fps - 메모리 최적화)
+            setTimeout(() => {
+                isProcessing = false;
+                sendFrames();
+            }, 100);
         }
 
         // 경고 활성화

@@ -67,12 +67,22 @@ def process_frame(frame_data):
     
     try:
         # Base64 디코딩
-        img_data = base64.b64decode(frame_data.split(',')[1])
+        if ',' in frame_data:
+            img_data = base64.b64decode(frame_data.split(',')[1])
+        else:
+            img_data = base64.b64decode(frame_data)
         nparr = np.frombuffer(img_data, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if frame is None or model is None:
             return None, False
+        
+        # 프레임 크기 조정 (메모리 최적화)
+        max_width = 640
+        h, w = frame.shape[:2]
+        if w > max_width:
+            scale = max_width / w
+            frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
         
         # YOLO 입력 준비
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -216,14 +226,20 @@ def process_frame(frame_data):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                             text_color, 2)
         
-        # 프레임을 JPEG로 인코딩
-        _, buffer = cv2.imencode('.jpg', frame)
+        # 프레임을 JPEG로 인코딩 (품질 낮춤 - 메모리 최적화)
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+        _, buffer = cv2.imencode('.jpg', frame, encode_param)
         frame_bytes = buffer.tobytes()
+        
+        # 메모리 정리
+        del img, buffer
         
         return frame_bytes, fall_detection_state['is_fall_persistent']
         
     except Exception as e:
         print(f"프레임 처리 오류: {e}")
+        import traceback
+        traceback.print_exc()
         return None, False
 
 @app.route('/')
@@ -243,15 +259,22 @@ def handle_disconnect():
 @socketio.on('video_frame')
 def handle_video_frame(data):
     """클라이언트로부터 비디오 프레임 수신 및 처리"""
-    frame_bytes, is_fall = process_frame(data['frame'])
-    
-    if frame_bytes:
-        # 처리된 프레임을 클라이언트에게 전송
-        frame_base64 = base64.b64encode(frame_bytes).decode('utf-8')
-        emit('processed_frame', {
-            'frame': f'data:image/jpeg;base64,{frame_base64}',
-            'is_fall': is_fall
-        })
+    try:
+        frame_bytes, is_fall = process_frame(data['frame'])
+        
+        if frame_bytes:
+            # 처리된 프레임을 클라이언트에게 전송
+            frame_base64 = base64.b64encode(frame_bytes).decode('utf-8')
+            emit('processed_frame', {
+                'frame': f'data:image/jpeg;base64,{frame_base64}',
+                'is_fall': is_fall
+            })
+            # 메모리 정리
+            del frame_bytes, frame_base64
+    except Exception as e:
+        print(f"비디오 프레임 처리 오류: {e}")
+        import traceback
+        traceback.print_exc()
 
 @socketio.on('toggle_warning')
 def handle_toggle_warning(data):
