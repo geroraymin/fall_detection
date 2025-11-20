@@ -32,7 +32,14 @@ except ImportError:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'fall_detection_secret_key'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    max_http_buffer_size=1000000,  # 1MB 제한
+    ping_timeout=60,
+    ping_interval=25
+)
 
 # YOLO 모델 로드
 weights_path = os.path.join(PROJECT_DIR, 'yolov5s.pt')
@@ -77,8 +84,8 @@ def process_frame(frame_data):
         if frame is None or model is None:
             return None, False
         
-        # 프레임 크기 조정 (메모리 최적화) - 더 작게
-        max_width = 480
+        # 프레임 크기 조정 (메모리 최적화) - 매우 작게
+        max_width = 320
         h, w = frame.shape[:2]
         if w > max_width:
             scale = max_width / w
@@ -231,7 +238,7 @@ def process_frame(frame_data):
                             text_color, 2)
         
         # 프레임을 JPEG로 인코딩 (품질 더 낮춤 - 메모리 최적화)
-        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 60]
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 50]
         _, buffer = cv2.imencode('.jpg', frame, encode_param)
         frame_bytes = buffer.tobytes()
         
