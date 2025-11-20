@@ -285,4 +285,4 @@ def handle_toggle_warning(data):
 if __name__ == '__main__':
     print("쓰러짐 감지 웹 애플리케이션 시작...")
     print(f"프로젝트 디렉토리: {PROJECT_DIR}")
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
