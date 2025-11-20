@@ -235,8 +235,8 @@ def process_frame(frame_data):
         _, buffer = cv2.imencode('.jpg', frame, encode_param)
         frame_bytes = buffer.tobytes()
         
-        # 적극적인 메모리 정리
-        del img, buffer, frame, overlay
+        # 적극적인 메모리 정리 (overlay는 조건부로만 생성됨)
+        del img, buffer, frame
         torch.cuda.empty_cache() if torch.cuda.is_available() else None
         
         return frame_bytes, fall_detection_state['is_fall_persistent']
